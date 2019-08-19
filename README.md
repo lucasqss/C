@@ -1,2 +1,1 @@
-# URI-Online-Judge
-This repository contains answers to the online judge problems
+Repository for programs written in C.
