@@ -61,6 +61,7 @@ tid_sistema = (pthread_t *) malloc(sizeof(pthread_t) * nthreads);
       printf("--ERRO: pthread_create()\n"); exit(-1);
     }
   }
+	
   //--espera todas as threads terminarem
   for (t=0; t<nthreads; t++) {
     if (pthread_join(tid_sistema[t], NULL)) {
