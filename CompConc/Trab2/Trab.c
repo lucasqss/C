@@ -4,7 +4,7 @@
 #include "pthread.h"
 #include "semaphore.h"
 
-
+pthread_mutex_t lock;           /* lock para terminar as threads */
 sem_t mutex;
 sem_t resource;                 /* semaforos */
 int rc = 0;
@@ -22,7 +22,7 @@ void *Leitura (void *threadid) {
     printf("inicializa leitor %d \n", *tid);
     //sprintf(nome, "%02d.txt", *tid);
     //fPtr = fopen(nome, "w");
-    while (reads > 0) {
+    while (reads >= 0) {
         sem_wait(&mutex);
         if((wc > 0)  || (rc == 0)){
             sem_post(&mutex);
@@ -30,21 +30,27 @@ void *Leitura (void *threadid) {
             sem_wait(&mutex);
         }
         rc += 1;
-        sem_post(&mutex);
-        /* inicia leitura */
-        printf("Leitor : %d esta executando...\n", *tid);
-        //sprintf(saida, "Leitura da thread %d, %d", *tid, var);
+        reads -=1;
+        if (reads>=0) {
+            sem_post(&mutex);
+            /* inicia leitura */
+            printf("Leitor : %d esta executando...\n", *tid);
+            //sprintf(saida, "Leitura da thread %d, %d", *tid, var);
 
-        //fputs(saida, fExit);
-        //fputs(var, fPtr);
-        reads -= 1;
-        /* termina leitura */
-        sem_wait(&mutex);
-        rc -= 1;
-        if (rc==0) {
-            sem_post(&resource);
+            //fputs(saida, fExit);
+            //fputs(var, fPtr);
+            /* termina leitura */
+            sem_wait(&mutex);
+            rc -= 1;
+            if (rc==0) {
+                sem_post(&resource);
+            }
+            sem_post(&mutex);
+            }
+        else{
+          sem_post(&mutex);
+          sem_post(&resource);
         }
-        sem_post(&mutex);
     }
     //fclose(fPtr);
     return 0;
@@ -55,22 +61,28 @@ void *Escrita (void *threadid) {
     //char saida[25];
     printf("inicializa escritor %d \n", *tid);
 
-    while (writes > 0) {
+    while (writes >= 0) {
         sem_wait(&mutex);
         wc += 1;
-        sem_post(&mutex);
-        sem_wait(&resource);
-        /* inicia escrita */
-        printf("Escritor : %d esta executando...\n", *tid);
-        var = *tid;
-        //sprintf(saida, "Escrita da thread %d, %d", *tid, var);
-        //fputs(saida, fExit);
         writes -= 1;
-        /* termina escrita */
-        sem_wait(&mutex);
-        wc -= 1;
-        sem_post(&mutex);
-        sem_post(&resource);
+        if (writes>=0){
+            sem_post(&mutex);
+            sem_wait(&resource);
+            /* inicia escrita */
+            printf("Escritor : %d esta executando...\n", *tid);
+            var = *tid;
+            //sprintf(saida, "Escrita da thread %d, %d", *tid, var);
+            //fputs(saida, fExit);
+            /* termina escrita */
+            sem_wait(&mutex);
+            wc -= 1;
+            sem_post(&mutex);
+            sem_post(&resource);
+        }
+        else{
+          sem_post(&mutex);
+          sem_post(&resource);
+        }
     }
     return 0;
 }
