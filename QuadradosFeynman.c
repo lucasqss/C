@@ -19,7 +19,7 @@ Para cada caso de teste na entrada, seu programa deve imprimir uma única linha,
 int ContaQuadrados(int n)
 {
     int total;
- /*Perceba que há a possibilidade de construir um algoritmo de tempo constante. Basta perceber que estamos fazendo um somatório de termos i^2 ,  0<i<=n. Isto se dá pelo fato de todo grid nxn possuir o numero de quadrados de um grid (n-1)x(n-1) somado aos proprios quadrados unitarios de nxn.*/   
+ /*Perceba que há a possibilidade de construir um algoritmo de tempo constante. Basta notar que estamos fazendo um somatório de termos i^2 ,  0<i<=n. Isto se dá pelo fato de todo grid nxn possuir o numero de quadrados de um grid (n-1)x(n-1) somado aos proprios quadrados unitarios de nxn.*/   
     total = (n*(n+1)*(2*n+1))/6;
     return total;
 }
