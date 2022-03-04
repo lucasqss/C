@@ -1,0 +1,400 @@
+// Autor: Lucas de Qu
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
+// Adiciona a biblioteca para o sleep dependendo do sistema operacional utilizado 
+#ifdef _WIN32
+#include <Windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#define NUMERO_MAXIMO_PROCESSOS 20
+#define TEMPO_DISCO 5
+#define TEMPO_FITA 8
+#define TEMPO_IMPRESSORA 10
+
+
+// ------------------------------------ Processos -------------------------------------------------
+
+
+struct Processo {
+    int pid;
+    int tempoServico;
+    int tempoChegada;
+    int prioridade;
+    int tipoProcesso;
+    int tempoIO;
+    int tempoEsperaIO;
+    int status;
+    int tempoUCP;
+};
+
+int isTempoExecucaoFinalizado(struct Processo processo){
+    if(processo.tempoServico == processo.tempoUCP){
+        return 1;
+    }
+    return 0;
+}
+
+int isTempoEsperaFinalizado(struct Processo processo){
+    if(processo.tempoIO == processo.tempoEsperaIO){
+        return 1;
+    }
+    return 0;
+}
+
+int isProcessoIO(struct Processo processo){
+    if (processo.tempoIO != 0){
+        return 1;
+    }
+    return 0;
+}
+
+int isProcessoAltaPrioridade(struct Processo processo){
+    if (processo.prioridade>1){
+        return 1;
+    }
+    return 0;
+}
+
+int encontraIndiceProcessoPorPid(struct Processo processos[], int numeroProcessos, int pidEsperado){
+    int indiceProcessoRetornado = 0;
+    for (int i = 0; i < numeroProcessos; i++){
+        if (processos[i].pid == pidEsperado){
+            indiceProcessoRetornado = i;
+        }
+    }
+    return indiceProcessoRetornado;
+}
+
+void atualizaStatusProcesso(struct Processo processos[], int numeroProcessos, int pidEsperado, int novoStatus){
+    processos[encontraIndiceProcessoPorPid(processos, numeroProcessos, pidEsperado)].status = novoStatus;
+}
+
+void atualizaTempoUCP(struct Processo processos[], int indiceProcesso){
+    processos[indiceProcesso].tempoUCP = processos[indiceProcesso].tempoUCP + 1;
+}
+
+void atualizaTempoEsperaIO(struct Processo processos[], int indiceProcesso){
+    processos[indiceProcesso].tempoEsperaIO = processos[indiceProcesso].tempoEsperaIO + 1;
+}
+
+// ------------------------------------ Filas -------------------------------------------------
+
+
+struct Fila {
+    int array[NUMERO_MAXIMO_PROCESSOS];
+    int indiceFim;
+};
+
+struct Fila inicializaFila(){
+    struct Fila fila;
+    for(int i = 0; i < NUMERO_MAXIMO_PROCESSOS; i++){
+        fila.array[i] = 0;
+    }
+    fila.indiceFim = 0;
+    return fila;
+}
+
+void insereProcessoFila(struct Fila* fila, struct Processo processo){
+    fila->array[fila->indiceFim] = processo.pid;
+    fila->indiceFim = fila->indiceFim + 1;
+}
+
+int removeProcessoFila(struct Fila* fila){
+    int pidRetorno = fila->array[0];
+
+    for(int i = 0; i < fila->indiceFim; i++){
+        if((fila->array[i] != 0) && (i != NUMERO_MAXIMO_PROCESSOS-1)){
+            fila->array[i] = fila->array[i+1];
+        }
+        else{
+            continue;
+        }
+    }
+    fila->indiceFim = fila->indiceFim - 1;
+    return pidRetorno;
+}
+
+void imprimefila(struct Fila fila){
+    for (int i = 0; i < sizeof(fila.array)/sizeof(int); i++){
+        if (i==0){
+            printf("[ %d ,", fila.array[i]);
+        }
+        
+        else if (i != sizeof(fila.array)/sizeof(int)-1){
+            printf(" %d ,", fila.array[i]);
+        }
+        else{
+            printf(" %d ]", fila.array[i]);
+        }
+        
+    }
+}
+
+// ------------------------------------ Saida -------------------------------------------------
+
+
+void imprimeCabecalho(){
+    printf("\n\n\n\n\n\n\n\n   PID     |     Prioridade     |     Tempo Servico     |     Tempo UCP     |   Tempo I/O    |    Status");  
+}
+
+void imprimeProcesso(struct Processo processo){
+    char *statusChar = malloc(64);
+    if(processo.status == 0){
+        strcpy(statusChar, "I/O");
+    }
+    else if(processo.status == 1){
+        strcpy(statusChar, "Executando");
+    }
+    else if(processo.status == 2){
+        strcpy(statusChar, "Pronto");
+    }
+    else{
+        strcpy(statusChar, "Finalizado");
+    }    
+    printf("\n%5d      |      %5d         |        %5d          |     %5d         |   %5d        |    %s", processo.pid, processo.prioridade, processo.tempoServico, processo.tempoUCP, processo.tempoEsperaIO, statusChar);
+    
+    free(statusChar);
+}
+
+
+// ------------------------------------ Execucao -------------------------------------------------
+
+int main()
+{
+    int numeroProcessosCriados;
+    int quantum;
+    int pidProcessoEmExecucao;
+    int executando = 100;
+    int esperandoIO = 100;
+
+    struct Fila filaAltaPrioridade = inicializaFila();
+
+    struct Fila filaBaixaPrioridade = inicializaFila();
+
+    struct Fila filaIO = inicializaFila();
+
+    printf("\n\nNumero de processos possiveis: %d \n", NUMERO_MAXIMO_PROCESSOS);  
+    printf("Digite o numero de processos que deseja criar: \n");  
+    scanf("%d", &numeroProcessosCriados); 
+
+    if (numeroProcessosCriados < 1 || numeroProcessosCriados > NUMERO_MAXIMO_PROCESSOS){
+        printf("Numero invalido\n");
+        return 1;  
+    }
+    
+    struct Processo *processos = malloc(numeroProcessosCriados * sizeof(struct Processo));
+
+    srand(time(NULL));
+
+    for (int i = 0; i < numeroProcessosCriados; i++)
+    {
+        processos[i].pid = i+1;
+        processos[i].tempoChegada = i+1;
+        processos[i].status = 2;
+        processos[i].tempoUCP = 0;
+        processos[i].tempoServico = rand() % 30 + 1;
+        processos[i].tempoEsperaIO = 0;
+        printf("Tipos validos:\n");
+        printf("0 - Processo CPU-bound\n");
+        printf("1 - Processo IO-bound disco\n");
+        printf("2 - Processo IO-bound fita magnetica\n");
+        printf("3 - Processo IO-bound impressora:\n");
+        printf("Digite o tipo de processo: \n");
+
+        int temp;
+        scanf("%d", &temp);
+
+        processos[i].tipoProcesso = temp;
+
+
+        if(temp==0){
+            processos[i].tempoIO = 0;
+            processos[i].prioridade = 1;
+
+        }
+        else if(temp == 1){
+            processos[i].tempoIO = TEMPO_DISCO;
+            processos[i].prioridade = 1;
+
+        }
+        else if(temp == 2){
+            processos[i].tempoIO = TEMPO_FITA;
+            processos[i].prioridade = 2;
+
+        }
+        else if(temp == 3){
+            processos[i].tempoIO = TEMPO_IMPRESSORA;
+            processos[i].prioridade = 1;
+
+        }
+        else{
+            printf("Tipo invalido\n");
+            return 1;
+        }
+
+        insereProcessoFila(&filaAltaPrioridade, processos[i]);
+    }
+
+    printf("Digite a fatia de tempo (quantum) do Round Robin: \n");
+    scanf("%d", &quantum);
+
+    int termino = 0;
+    while (termino == 0){
+        
+        int cpuOciosa = 0;
+        int i = 1;
+        
+        while (i <= quantum){
+            
+            // Exibe as informações de saida
+            imprimeCabecalho();
+            for (int j = 0; j < numeroProcessosCriados; j++){
+                    imprimeProcesso(processos[j]);
+            }
+            printf("\n Fila de alta prioridade:  ");
+            imprimefila(filaAltaPrioridade);
+
+            printf("\n Fila de baixa prioridade: ");
+            imprimefila(filaBaixaPrioridade);
+
+            printf("\n Fila de I/O:              ");
+            imprimefila(filaIO);
+
+            /*---------------------------------------------------- CPU ----------------------------------------------------*/ 
+
+            // caso não tenha processo em execucao, ou colocamos algum para executar de alguma fila ou todos terminaram ou resta apenas I/O
+            if(executando == 100){
+
+                // primeiro verificamos a fila de alta prioridade e colocamos para executar o primeiro da fila
+                if(filaAltaPrioridade.indiceFim != 0 && cpuOciosa == 0){
+                    executando = removeProcessoFila(&filaAltaPrioridade);
+                    atualizaStatusProcesso(processos, numeroProcessosCriados, executando, 1);
+                }
+
+                // em seguida a de baixa e novamente colocamos para executar o primeiro da fila caso a fila de alta esteja vazia
+                else if(filaBaixaPrioridade.indiceFim != 0 && cpuOciosa == 0){
+                    executando = removeProcessoFila(&filaBaixaPrioridade);
+                    atualizaStatusProcesso(processos, numeroProcessosCriados, executando, 1);
+                }
+
+                // se nao tiver ninguem executando nem esperando por I/O e todas as filas estiverem vazias, o programa termina
+                else if (filaAltaPrioridade.indiceFim == 0 && filaBaixaPrioridade.indiceFim == 0 && filaIO.indiceFim == 0 && esperandoIO == 100 ){
+                    termino = 1;
+                    break;
+                }
+            }
+
+            // se o processo termina antes do fim de sua fatia de tempo ou vai para espera de I/O, a cpu fica ociosa (o proximo processo apenas inicia sua execucao apos o fim da fatia de tempo)
+            else if (executando == 100 && cpuOciosa != 0){
+                i++;               
+                continue;
+            }
+            
+            // se há algum executando, ou ele permanece executando, ou a fatia de tempo acaba
+            // ou ele termina sua execucao antes da fatia de tempo acabar
+            else{
+                int indiceProcessoExecutando = encontraIndiceProcessoPorPid(processos, numeroProcessosCriados, executando);
+                
+                // verificamos se a execucao esta finalizada
+                if (isTempoExecucaoFinalizado(processos[indiceProcessoExecutando])){
+
+                    if (isProcessoIO(processos[indiceProcessoExecutando])){
+
+                        // se o processo I/O-bound ja terminou seu processamento e sua espera por I/O, o processo é finalizado
+                        if (isTempoEsperaFinalizado(processos[indiceProcessoExecutando])){
+                            atualizaStatusProcesso(processos, numeroProcessosCriados, executando, 3);
+                        }
+
+                        // caso nao tenha é colocado na fila de espera por I/O
+                        else{
+                            insereProcessoFila(&filaIO, processos[indiceProcessoExecutando]);
+                        }
+                    }
+
+                    // se for CPU-bound e seu tempo de serviço estiver concluido, o processo é finalizado
+                    else{
+                        atualizaStatusProcesso(processos, numeroProcessosCriados, executando, 3);
+                    }
+                    
+                    // libera a cpu
+                    executando = 100;
+
+                    // sinaliza que outro processo não pode ser executado dentro dessa fatia de tempo
+                    cpuOciosa = 1;
+                }
+
+                // se ocorre preempcao o processo vai para a fila de baixa prioridade independente de seu tipo
+                else if (i == quantum){
+
+                    atualizaTempoUCP(processos, indiceProcessoExecutando);
+                    insereProcessoFila(&filaBaixaPrioridade, processos[indiceProcessoExecutando]);
+                    atualizaStatusProcesso(processos, numeroProcessosCriados, executando, 2);
+
+                    // libera a cpu
+                    executando = 100;
+
+                    // sinaliza que outro processo não pode ser executado dentro dessa fatia de tempo
+                    cpuOciosa = 1;
+                }
+
+                else{
+                    // atualizamos o tempo de UCP
+                    atualizaTempoUCP(processos, indiceProcessoExecutando);
+                }
+
+
+            }
+
+            /*---------------------------------------------------- I/O ----------------------------------------------------*/ 
+
+            // primeiro verificamos se algum processo ja esta em espera por I/O
+            // se sim, verificamos se ja terminou de esperar e pode ser colocado na fila de alta prioridade para ser finalizado ou se permanece esperando
+            if (esperandoIO != 100){
+                int indiceProcessoEsperando = encontraIndiceProcessoPorPid(processos, numeroProcessosCriados, esperandoIO);
+
+
+                // se ja terminou de esperar o processo é colocado na fila de espera adequada 
+                if (isTempoEsperaFinalizado(processos[indiceProcessoEsperando])){
+                    if (isProcessoAltaPrioridade(processos[indiceProcessoEsperando])){
+                        insereProcessoFila(&filaAltaPrioridade, processos[indiceProcessoEsperando]);
+                    }
+                    else{
+                        insereProcessoFila(&filaBaixaPrioridade, processos[indiceProcessoEsperando]);
+                    }
+
+                    atualizaStatusProcesso(processos, numeroProcessosCriados, esperandoIO, 2);
+
+                    // libera para o proximo processo 
+                    esperandoIO = 100;
+                }
+
+                // se o processo esta esperando por I/O mas nao terminou ainda, apenas atualizamos seu tempo
+                else{
+                    atualizaTempoEsperaIO(processos, indiceProcessoEsperando);
+                }
+                
+            }
+
+            // Se ninguem esta esperando e existe algum na fila de espera por IO
+            else if (esperandoIO == 100 && filaIO.indiceFim != 0){
+                esperandoIO = removeProcessoFila(&filaIO);
+                atualizaStatusProcesso(processos, numeroProcessosCriados, esperandoIO, 0);
+
+            }
+
+            i++;
+
+        }
+
+    }
+
+    free(processos);
+
+    return 0;
+}
